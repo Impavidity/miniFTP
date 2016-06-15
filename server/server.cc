@@ -3,14 +3,14 @@
 SERVER_ERROR ERR;
 
 // MESSAGE DEFINITION
-string welcome = "Welcome!\n";
+string welcome = "Welcome!";
 
 string hls = "ls: list files under the current directory\n";
 string hcd = "cd [dir name]: change the directory.\n";
 string hpull = "pull [file name]: pull file from the ftp server.\n";
-string hpush = "push [file name]: push file to the ftp server\n";
+string hpush = "push [file name]: push file to the ftp server";
 string help =
-        "Help\n"
+        "Help : \n"
         + hls
         + hcd
         + hpull
@@ -72,6 +72,11 @@ void *new_service(void * sock) {
 	node * curr = &root;
 
 	cerr << "Connection success." << endl;
+	if (write(msg_sock, welcome.c_str(), welcome.size() + 1) < 0 ){
+		cerr << "Write Welcome Failed" << endl;
+	} else {
+		cerr << "Write Welcome Success" << endl;
+	}
 
 	int snd_size = 0, rcv_size = 0;
 	socklen_t optlen = sizeof(snd_size);
@@ -92,6 +97,7 @@ void *new_service(void * sock) {
 
 	while (run) {
 		auto read_flag = read(msg_sock, buffer, sizeof(buffer));
+		cerr << "I get Buffer " << buffer << endl;
 		if (read_flag < 0) {
 			cerr << "Reading from client failed." << endl;
 			close(msg_sock);
@@ -102,11 +108,22 @@ void *new_service(void * sock) {
 		} else {
 			if (strcmp(buffer, CMD_HELP) == 0) {
 				cmd_help(msg_sock);
-			} else if (strcmp(buffer, CMD_LS) == 0) {
+				continue;
+			} 
+			if (strcmp(buffer, CMD_LS) == 0) {
 				cmd_list(msg_sock, curr);
-			} else {
-				cerr << "Command not found " << buffer << endl;
+				continue;
 			}
+			if (strcmp(buffer, CLIENT_PWD) == 0) {
+				client_pwd(msg_sock, curr);
+				continue;
+			}
+			if (strcmp(buffer, CLIENT_CD) == 0) {
+				client_cd(msg_sock, curr);
+				continue;
+			}
+			cerr << "Command not found " << buffer << endl;
+			
 		}
 	}
 
@@ -149,4 +166,59 @@ void client_cd(int sock, node *&curr) {
 		return;
 	}
 	cerr << "command cd" << endl;
+
+	auto read_flag = read(sock, buffer, sizeof(buffer));
+	if (read_flag < 0) {
+		cerr << "read failed" << endl;
+		return;
+	} else if (read_flag == 0) {
+		cerr << "Connection ended" << endl;
+		return;
+	} else {
+		stringstream ss;
+		ss << buffer;
+		if (ss.str() == ".") {
+			sprintf(buffer, "%s", curr->name.c_str());
+			if (write(sock, buffer, strlen(buffer)+1)<0) {
+				cerr << "Write failed" << endl;
+			}
+		} else if (ss.str() == "..") {
+			if (curr->parent == NULL) {
+				sprintf(buffer, "%s", "This is the root");
+				if (write(sock, buffer, strlen(buffer)+1) < 0) {
+					cerr << "Write failed" << endl;
+				}
+			} else {
+ 				curr = curr->parent;
+				sprintf(buffer, "%s", curr->name.c_str());
+				if (write(sock, buffer, strlen(buffer)+1) < 0) {
+					cerr << "Write failed" << endl;
+				}
+			}
+		} else {
+			auto &v = curr->child;
+			for (auto &item : v) {
+				if (item.name == ss.str()) {
+					if (item.isDir) {
+						curr = &item;
+						if (write(sock, curr->name.c_str(), curr->name.size()+1) < 0) {
+							cerr << "Write failed" << endl;
+						}
+						return;
+					} else {
+						sprintf(buffer, "%s", "It is not a directory");
+						if (write(sock, buffer, strlen(buffer)+1)<0) {
+							cerr << "Write Failed" << endl;
+						}
+						return;
+					}
+				}
+			}
+			sprintf(buffer, "No such directory: %s" , ss.str().c_str());
+			if (write(sock, buffer, strlen(buffer)+1) < 0) {
+				cerr <<"Write failed" << endl;
+			}
+		}
+	}
+
 }
